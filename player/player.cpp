@@ -346,16 +346,25 @@ void VideoPlayer::run()
         mMainWindow.update();
 
         // sync with audio
-//        qDebug() << "packet pts" << mVideoPacket->pts * av_q2d(mVideoFormatCtx->streams[mVideoStreamIndex]->time_base);
         if (static_cast<Player&>(mParent).mAudioPlayer->isRunning() && mAudioTimeBase >= 0)
         {
+//            mVideoTimeBase = mVideoFrame->pts * av_q2d(mVideoFormatCtx->streams[mVideoStreamIndex]->time_base) * 1000;
             mVideoTimeBase = mVideoPacket->pts * av_q2d(mVideoFormatCtx->streams[mVideoStreamIndex]->time_base) * 1000;
             gTimeDiffMut.lock();
             mTimeDiff = mVideoTimeBase - mAudioTimeBase;
             gTimeDiffMut.unlock();
             if (mTimeDiff > 0)
             {
+//                qDebug() << "[INFO] *********image too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
+//                         << mAudioTimeBase << "]"
+//                         << getMiliSecondTimeStamp();
                 Sleep(mTimeDiff);
+            }
+            else
+            {
+//                qDebug() << "[INFO]==========not too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
+//                         << mAudioTimeBase << "]"
+//                         << getMiliSecondTimeStamp();
             }
         }
         else
@@ -364,7 +373,6 @@ void VideoPlayer::run()
             nowClock = getMiliSecondTimeStamp();
             wishClock = mVideoPacket->pts * av_q2d(mVideoFormatCtx->streams[mVideoStreamIndex]->time_base) * 1000;
             timeDiff = wishClock - (nowClock - startClock);
-//                qDebug() <<
             if (timeDiff > 0)
             {
                 Sleep(timeDiff);
@@ -523,16 +531,13 @@ void AudioPlayer::run()
     int ret = 0;
     int len = -1;
     int outSize = -1;
-    int sleepTime = 0;  // ms
-    int64_t startClock = 0, nowClock = 0;
+    int64_t sleepTime = 0;  // ms
 
-    startClock = getMiliSecondTimeStamp();
     while (!mNeedStop)
     {
         if (mIsPause)
         {
             Sleep(PAUSE_SLEEP_TIME);
-            startClock += PAUSE_SLEEP_TIME;
             continue;
         }
         ret = av_read_frame(mAudioFormatCtx, mAudioPacket);
@@ -580,17 +585,16 @@ void AudioPlayer::run()
             if (mAudioOutput->bytesFree() < outSize)
             {
                 Sleep(sleepTime);
-//                qDebug() << "sleep [" << sleepTime << "]";
+
             }
             else
             {
-//                qDebug() << "no sleep, but sleep time = [" << sleepTime << "]";
+
             }
             mAudioIODevice->write((char*)mAudioBuf, outSize);
-            // update clock
-            nowClock = getMiliSecondTimeStamp();
+
             gTimeDiffMut.lock();
-            mAudioTimeBase = nowClock - startClock;
+            mAudioTimeBase = mAudioFrame->pts * av_q2d(mAudioFormatCtx->streams[mAudioStreamIndex]->time_base) * 1000;
             gTimeDiffMut.unlock();
         }
         av_packet_unref(mAudioPacket);
