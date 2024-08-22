@@ -4,6 +4,8 @@
 #include <QDateTime>
 #include <QString>
 
+#define DVE_DEBUG
+
 
 qint64 getMiliSecondTimeStamp();
 

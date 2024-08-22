@@ -9,6 +9,7 @@
 #include <QtMultimedia/QAudioFormat>
 #include <QtMultimedia/QAudioDeviceInfo>
 #include <QtMultimedia/QAudioOutput>
+#include <QPixmap>
 
 extern "C"
 {
@@ -23,6 +24,7 @@ extern "C"
 
 extern QMutex gImgMut;
 extern QImage gImg;
+//extern QPixmap gPixmap;
 
 class VideoPlayer : public QThread
 {
@@ -114,6 +116,7 @@ public:
     double mTimeDiff;
     QWidget &mMainWindow;
     double mAudioVolume;
+    QPixmap mPixmap;
 
     // =========================================================video run param==================================================================
 //    int mVideoStreamIndex;

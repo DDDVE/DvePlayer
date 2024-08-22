@@ -1,5 +1,6 @@
 #include <QDebug>
 #include <windows.h>
+#include <map>
 
 extern "C"
 {
@@ -27,6 +28,21 @@ extern "C"
 QMutex gTimeDiffMut;
 QMutex gImgMut;
 QImage gImg;
+//QPixmap gPixmap;
+
+std::map<int, int> gSampleFmt2BitNum = {{AV_SAMPLE_FMT_NONE, -1},
+                                        {AV_SAMPLE_FMT_U8, 8},
+                                        {AV_SAMPLE_FMT_S16, 16},
+                                        {AV_SAMPLE_FMT_S32, 32},
+                                        {AV_SAMPLE_FMT_FLT, 32},
+                                        {AV_SAMPLE_FMT_DBL, 64},
+                                        {AV_SAMPLE_FMT_U8P, 8},
+                                        {AV_SAMPLE_FMT_S16P, 16},
+                                        {AV_SAMPLE_FMT_S32P, 32},
+                                        {AV_SAMPLE_FMT_FLTP, 32},
+                                        {AV_SAMPLE_FMT_DBLP, 64},
+                                        {AV_SAMPLE_FMT_S64, 64},
+                                        {AV_SAMPLE_FMT_S64P, 64}};
 
 /*=====================================Player========================================*/
 
@@ -258,24 +274,36 @@ void VideoPlayer::releaseRunParam()
     if (mVideoFrame)
     {
         av_frame_free(&mVideoFrame); mVideoFrame = nullptr;
+
     }
     if (mVideoFrameRGB)
     {
+        //av_freep(mVideoFrameRGB);
         av_frame_free(&mVideoFrameRGB); mVideoFrameRGB = nullptr;
+        //qDebug() << "111";
     }
     if (mVideoPacket)
     {
+        av_freep(mVideoPacket);
         av_free(mVideoPacket); mVideoPacket = nullptr;
+        qDebug() << "111";
     }
     if (mVideoSwsCtx)
     {
         sws_freeContext(mVideoSwsCtx); mVideoSwsCtx = nullptr;
     }
+    if (mVideoBuf)
+    {
+//        av_free(mVideoBuf); mVideoBuf = nullptr;
+
+    }
+    qDebug() << "222";
 }
 
 void VideoPlayer::run()
 {
     qDebug() << LOG_ENTER_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+    Player& p = static_cast<Player&>(mParent);
     int ret = 0;
     // time setting
     int64_t startClock;
@@ -342,7 +370,8 @@ void VideoPlayer::run()
         sws_scale(mVideoSwsCtx, mVideoFrame->data, mVideoFrame->linesize, 0, mVideoCodecCtx->height, mVideoFrameRGB->data, mVideoFrameRGB->linesize);
 //            gImgMut.lock();
         gImg = QImage((uchar*)mVideoFrameRGB->data[0], mVideoCodecCtx->width, mVideoCodecCtx->height, QImage::Format_RGB32);
-//            gImgMut.unlock();
+        p.mPixmap = QPixmap::fromImage(gImg);
+        //            gImgMut.unlock();
         mMainWindow.update();
 
         // sync with audio
@@ -355,16 +384,20 @@ void VideoPlayer::run()
             gTimeDiffMut.unlock();
             if (mTimeDiff > 0)
             {
-//                qDebug() << "[INFO] *********image too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
-//                         << mAudioTimeBase << "]"
-//                         << getMiliSecondTimeStamp();
+#ifdef DVE_DEBUG
+                qDebug() << "[INFO] *********image too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
+                         << mAudioTimeBase << "]"
+                         << getMiliSecondTimeStamp();
+#endif
                 Sleep(mTimeDiff);
             }
             else
             {
-//                qDebug() << "[INFO]==========not too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
-//                         << mAudioTimeBase << "]"
-//                         << getMiliSecondTimeStamp();
+#ifdef DVE_DEBUG
+                qDebug() << "[INFO]==========not too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
+                         << mAudioTimeBase << "]"
+                         << getMiliSecondTimeStamp();
+#endif
             }
         }
         else
@@ -418,7 +451,7 @@ void AudioPlayer::InitAudioFormat(QAudioFormat &_audioFormat)
 {
     _audioFormat.setSampleRate(44100);
     _audioFormat.setChannelCount(2);
-    _audioFormat.setSampleSize(16);
+    _audioFormat.setSampleSize(32);
     _audioFormat.setCodec("audio/pcm");
     _audioFormat.setByteOrder(QAudioFormat::LittleEndian);
     _audioFormat.setSampleType(QAudioFormat::SignedInt);
@@ -441,6 +474,18 @@ void AudioPlayer::releaseRunParam()
     if (mAudioFormatCtx)
     {
         avformat_free_context(mAudioFormatCtx); mAudioFormatCtx = nullptr;
+    }
+    if (mAudioBuf)
+    {
+        av_free(mAudioBuf); mAudioBuf = nullptr;
+    }
+    if (mAudioFormat)
+    {
+        delete mAudioFormat; mAudioFormat = nullptr;
+    }
+    if (mAudioOutput)
+    {
+        delete mAudioOutput; mAudioOutput = nullptr;
     }
 }
 
@@ -509,12 +554,19 @@ int AudioPlayer::InitRunParam()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
+    if (!gSampleFmt2BitNum.count(mAudioCodecCtx->sample_fmt) || gSampleFmt2BitNum[mAudioCodecCtx->sample_fmt] == -1)
+    {
+        qDebug() << "[ERROR] sample_fmt UNKNOWN." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+        return -1;
+    }
+    qDebug() << "[INFO] Use sample_fmt [" << gSampleFmt2BitNum[mAudioCodecCtx->sample_fmt] << "]"
+             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
     // set decode parameter
-    ret = swr_alloc_set_opts2(&mAudioSwrCtx, &mAudioCodecCtx->ch_layout, AV_SAMPLE_FMT_S16, mAudioCodecCtx->sample_rate,
+    ret = swr_alloc_set_opts2(&mAudioSwrCtx, &mAudioCodecCtx->ch_layout, AV_SAMPLE_FMT_S32, mAudioCodecCtx->sample_rate,
                                   &mAudioCodecCtx->ch_layout, mAudioCodecCtx->sample_fmt, mAudioCodecCtx->sample_rate, 0, nullptr);
     if (ret < 0)
     {
-        qDebug() << "[ERROR] avcodec_open2 FAIL. err=["
+        qDebug() << "[ERROR] swr_alloc_set_opts2 FAIL. err=["
                  << QString(av_err2str(ret))
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
@@ -579,8 +631,9 @@ void AudioPlayer::run()
                 qDebug() << "[ERROR] swr_convert FAIL." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
                 continue;
             }
-            outSize = av_samples_get_buffer_size(0,mAudioCodecCtx->ch_layout.nb_channels, len, AV_SAMPLE_FMT_S16, 1);
-            sleepTime = (mAudioCodecCtx->sample_rate * 16 * 2 / 8) / outSize;
+            // find size from map
+            outSize = av_samples_get_buffer_size(0,mAudioCodecCtx->ch_layout.nb_channels, len, AV_SAMPLE_FMT_S32, 1);
+            sleepTime = (mAudioCodecCtx->sample_rate * 32 * 2 / 8) / outSize / 2;
 
             if (mAudioOutput->bytesFree() < outSize)
             {

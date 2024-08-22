@@ -110,9 +110,9 @@ void MainWindow::paintEvent(QPaintEvent *event)
 //    qDebug() << LOG_ENTER_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
 //    gImgMut.lock();
     QPainter tmpPainter(this);
-    tmpPainter.drawImage(QRect(ui->verticalLayoutWidget->x() + ui->verticalLayoutWidget->width(),
-                        ui->verticalLayoutWidget->y(), gImg.width(), gImg.height()),
-                        gImg);
+    tmpPainter.drawPixmap(QRect(ui->verticalLayoutWidget->x() + ui->verticalLayoutWidget->width(),
+                                ui->verticalLayoutWidget->y(), mPlayer->mPixmap.width(), mPlayer->mPixmap.height()),
+                                mPlayer->mPixmap);
 //    gImgMut.unlock();
     // change bottom playing layout
     ui->horizontalLayoutWidget_2->setGeometry(ui->verticalLayoutWidget->width() + 10,
