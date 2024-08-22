@@ -675,6 +675,7 @@ AudioPlayer::~AudioPlayer()
 void AudioPlayer::InitAudioFormat(QAudioFormat &_audioFormat)
 {
     _audioFormat.setSampleRate(mAudioCodecCtx->sample_rate);
+    qDebug() << "^^^^^ real sample rate =[" << mAudioCodecCtx->sample_rate << "]";
     _audioFormat.setChannelCount(mAudioCodecCtx->ch_layout.nb_channels);
     _audioFormat.setSampleSize(8 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16));
     _audioFormat.setCodec("audio/pcm");
@@ -871,7 +872,16 @@ void AudioPlayer::run()
                          << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
                 continue;
             }
-            sleepTime = (mAudioCodecCtx->sample_rate * 16 * mAudioCodecCtx->ch_layout.nb_channels / 8) / outSize;   // 16 - AV_SAMPLE_FMT_S16
+            int times = 1;
+            if (mAudioCodecCtx->sample_rate > 44100)
+            {
+                times = 1;
+            }
+            else
+            {
+                times = 44100 / mAudioCodecCtx->sample_rate;
+            }
+            sleepTime = (mAudioCodecCtx->sample_rate * 16 * mAudioCodecCtx->ch_layout.nb_channels / 8) / outSize * times;   // 16 - AV_SAMPLE_FMT_S16
             if (mAudioOutput->bytesFree() < outSize)
             {
                 Sleep(sleepTime);
