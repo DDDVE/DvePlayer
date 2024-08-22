@@ -190,58 +190,103 @@ void Player::onChangePlayProgress(int val)
     }
 
     // change base time
-//    while (abs(mVideoTimeBase - targetTime) > 100)
-//    {
-//        // decode and drop
-//        av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
-//    }
-//    do
-//    {
-//        ret = av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
-//        if (ret < 0)
-//        {
-//            qDebug() << "%%%% av_read_frame fail, err=["
-//                     << QString(av_err2str(ret)).toStdString().c_str() << "]";
-//            break;
-//        }
-//        if (mVideoPlayer->mVideoPacket->stream_index != mVideoPlayer->mVideoStreamIndex)
-//        {
-//            qDebug() << "@@@ continue";
-//            continue;
-//        }
-//        qDebug() << "$$$ find video packet";
-//        ret = avcodec_send_packet(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoPacket);
-//        qDebug() << "there";
-//        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
-//        {
-//            continue;
-//        }
-//        if (ret < 0)
-//        {
-//            qDebug() << "[ERROR] avcodec_send_packet FAIL. ret=[" << ret << "], err=["
-//                     << QString(av_err2str(ret)).toStdString().c_str()
-//                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
-//            break;;
-//        }
+    do
+    {
+        ret = av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
+        if (ret < 0)
+        {
+            qDebug() << "%%%% av_read_frame fail, err=["
+                     << QString(av_err2str(ret)).toStdString().c_str() << "]";
+            break;
+        }
+        if (mVideoPlayer->mVideoPacket->stream_index != mVideoPlayer->mVideoStreamIndex)
+        {
+            qDebug() << "@@@ continue";
+            av_packet_unref(mVideoPlayer->mVideoPacket);
+            continue;
+        }
+        qDebug() << "$$$ find video packet";
+        ret = avcodec_send_packet(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoPacket);
+        qDebug() << "there";
+        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
+        {
+            av_packet_unref(mVideoPlayer->mVideoPacket);
+            continue;
+        }
+        if (ret < 0)
+        {
+            qDebug() << "[ERROR] avcodec_send_packet FAIL. ret=[" << ret << "], err=["
+                     << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+            break;;
+        }
 
-//        ret = avcodec_receive_frame(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoFrame);
-//        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
-//        {
-//            continue;
-//        }
-//        if (ret < 0)
-//        {
-//            qDebug() << "[ERROR] avcodec_receive_frame FAIL. ret=[" << ret << "], err=["
-//                     << QString(av_err2str(ret)).toStdString().c_str()
-//                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
-//            break;;
-//        }
-//    } while ((mVideoPlayer->mVideoFrame->flags != 1) &&
-//             (mVideoPlayer->mVideoFrame->pict_type != AV_PICTURE_TYPE_I));
-//    qDebug() << "here";
-    av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
-    av_read_frame(mAudioPlayer->mAudioFormatCtx, mAudioPlayer->mAudioPacket);
-    mVideoTimeBase = mAudioTimeBase =
+        ret = avcodec_receive_frame(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoFrame);
+        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
+        {
+            av_packet_unref(mVideoPlayer->mVideoPacket);
+            continue;
+        }
+        if (ret < 0)
+        {
+            qDebug() << "[ERROR] avcodec_receive_frame FAIL. ret=[" << ret << "], err=["
+                     << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+            break;;
+        }
+    } while ((mVideoPlayer->mVideoFrame->flags != 1) &&
+             (mVideoPlayer->mVideoFrame->pict_type != AV_PICTURE_TYPE_I));
+    // decode audio frame until ahead of video
+    do
+    {
+        ret =     av_read_frame(mAudioPlayer->mAudioFormatCtx, mAudioPlayer->mAudioPacket);
+        if (ret < 0)
+        {
+            qDebug() << "[ERROR] av_read_frame FAIL. ret=[" << ret << "], err=["
+                     << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+            break;
+        }
+        if (mAudioPlayer->mAudioPacket->stream_index != mAudioPlayer->mAudioStreamIndex)
+        {
+            av_packet_unref(mAudioPlayer->mAudioPacket);
+            continue;
+        }
+        ret = avcodec_send_packet(mAudioPlayer->mAudioCodecCtx, mAudioPlayer->mAudioPacket);
+        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
+        {
+            av_packet_unref(mAudioPlayer->mAudioPacket);
+            continue;
+        }
+        if (ret < 0)
+        {
+            qDebug() << "[ERROR] avcodec_send_packet FAIL. ret=[" << ret << "], err=["
+                     << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+            break;
+        }
+        while (avcodec_receive_frame(mAudioPlayer->mAudioCodecCtx, mAudioPlayer->mAudioFrame) >= 0)
+        {
+            if (!av_sample_fmt_is_planar(mAudioPlayer->mAudioCodecCtx->sample_fmt))
+            {
+                qDebug() << "[ERROR] av_sample_fmt_is_planar FAIL." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+                continue;
+            }
+            if ((mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000)
+                    <=
+                   (mAudioPlayer->mAudioFrame->pts * av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base) * 1000))
+            {
+                break;
+            }
+        }
+    } while ((mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000)
+             >
+            (mAudioPlayer->mAudioFrame->pts * av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base) * 1000));
+
+//    av_read_frame(mAudioPlayer->mAudioFormatCtx, mAudioPlayer->mAudioPacket);
+    mVideoTimeBase =
+            mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000;
+    mAudioTimeBase =
             mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000;
     qDebug() << "[INFO] after change, mAudioTimeBase=[" << mAudioTimeBase << "], mVideoTimeBase=["
              << mVideoTimeBase << "]" << getMiliSecondTimeStamp();
@@ -434,40 +479,43 @@ int VideoPlayer::InitRunParam()
 // release source
 void VideoPlayer::releaseRunParam()
 {
-
-    if (mVideoFormatCtx)
+    if (mVideoSwsCtx)
     {
-        avformat_close_input(&mVideoFormatCtx); mVideoFormatCtx = nullptr;
-    }
-    if (mVideoCodecCtx)
-    {
-        avcodec_free_context(&mVideoCodecCtx); mVideoCodecCtx = nullptr;
+        sws_freeContext(mVideoSwsCtx); mVideoSwsCtx = nullptr;
     }
     if (mVideoFrame)
     {
         av_frame_free(&mVideoFrame); mVideoFrame = nullptr;
 
     }
+    if (mVideoCodecCtx)
+    {
+        avcodec_close(mVideoCodecCtx); mVideoCodecCtx = nullptr;
+    }
+
     if (mVideoFrameRGB)
     {
-        //av_freep(mVideoFrameRGB);
         av_frame_free(&mVideoFrameRGB); mVideoFrameRGB = nullptr;
         //qDebug() << "111";
     }
     if (mVideoPacket)
     {
+        int64_t test1 = getMiliSecondTimeStamp();
         av_freep(mVideoPacket);
         av_free(mVideoPacket); mVideoPacket = nullptr;
-        qDebug() << "111";
+        int64_t test2 = getMiliSecondTimeStamp();
+        qDebug() << "free mVideoPacket usse ["
+                 << test2 - test1 << "]ms";
     }
-    if (mVideoSwsCtx)
-    {
-        sws_freeContext(mVideoSwsCtx); mVideoSwsCtx = nullptr;
-    }
+
     if (mVideoBuf)
     {
 //        av_free(mVideoBuf); mVideoBuf = nullptr;
 
+    }
+    if (mVideoFormatCtx)
+    {
+        avformat_close_input(&mVideoFormatCtx); mVideoFormatCtx = nullptr;
     }
     qDebug() << "222";
 }
@@ -490,6 +538,12 @@ void VideoPlayer::run()
     // read video packet in a loop
     while (!mNeedStop)
     {
+        if (mIsPause)
+        {
+            Sleep(PAUSE_SLEEP_TIME);
+            startClock += PAUSE_SLEEP_TIME;
+            continue;
+        }
         // read frame
         ret = av_read_frame(mVideoFormatCtx, mVideoPacket);
         if (ret < 0)
@@ -509,6 +563,7 @@ void VideoPlayer::run()
         ret = avcodec_send_packet(mVideoCodecCtx, mVideoPacket);
         if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
         {
+            av_packet_unref(mVideoPacket);
             continue;
         }
         if (ret < 0)
@@ -522,6 +577,7 @@ void VideoPlayer::run()
         ret = avcodec_receive_frame(mVideoCodecCtx, mVideoFrame);
         if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
         {
+            av_packet_unref(mVideoPacket);
             continue;
         }
         if (ret < 0)
@@ -532,12 +588,7 @@ void VideoPlayer::run()
             goto out;
         }
 
-        if (mIsPause)
-        {
-            Sleep(PAUSE_SLEEP_TIME);
-            startClock += PAUSE_SLEEP_TIME;
-            continue;
-        }
+
 
         // YUV to RGB32
         sws_scale(mVideoSwsCtx, mVideoFrame->data, mVideoFrame->linesize, 0, mVideoCodecCtx->height, mVideoFrameRGB->data, mVideoFrameRGB->linesize);
@@ -633,21 +684,21 @@ void AudioPlayer::InitAudioFormat(QAudioFormat &_audioFormat)
 
 void AudioPlayer::releaseRunParam()
 {
+    if (mAudioSwrCtx)
+    {
+        swr_free(&mAudioSwrCtx); mAudioSwrCtx = nullptr;
+    }
     if (mAudioFrame)
     {
         av_frame_free(&mAudioFrame); mAudioFrame = nullptr;
     }
+    if (mAudioCodecCtx)
+    {
+        avcodec_close(mAudioCodecCtx); mAudioCodecCtx = nullptr;
+    }
     if (mAudioPacket)
     {
         av_packet_free(&mAudioPacket); mAudioPacket = nullptr;
-    }
-    if (mAudioCodecCtx)
-    {
-        avcodec_free_context(&mAudioCodecCtx); mAudioCodecCtx = nullptr;
-    }
-    if (mAudioFormatCtx)
-    {
-        avformat_free_context(mAudioFormatCtx); mAudioFormatCtx = nullptr;
     }
     if (mAudioBuf)
     {
@@ -661,6 +712,10 @@ void AudioPlayer::releaseRunParam()
     {
         mAudioOutput->stop();
         delete mAudioOutput; mAudioOutput = nullptr;
+    }
+    if (mAudioFormatCtx)
+    {
+        avformat_close_input(&mAudioFormatCtx); mAudioFormatCtx = nullptr;
     }
 }
 
