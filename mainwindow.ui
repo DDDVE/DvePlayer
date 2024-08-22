@@ -65,10 +65,17 @@
       <x>140</x>
       <y>470</y>
       <width>631</width>
-      <height>41</height>
+      <height>56</height>
      </rect>
     </property>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
+      <widget class="QSlider" name="verticalSlider">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QPushButton" name="pushButton">
        <property name="text">

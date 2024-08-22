@@ -26,6 +26,8 @@ public:
     void onReleasePauseButton();
     void paintEvent(QPaintEvent *event);
     void onVolumeChanged(int val);
+    void onProgressRelease();
+    void onProgressPress();
 
 
     Ui::MainWindow *ui;

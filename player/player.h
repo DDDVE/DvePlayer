@@ -63,6 +63,7 @@ signals:
 
 class AudioPlayer : public QThread
 {
+    Q_OBJECT
 public:
     AudioPlayer(bool& _mIsPause, double &_mAudioTimeBase, bool &_mNeedStop,
                 QString &_mFilePath, QWidget &_mMainWindow, QThread &_mParent, double &_mAudioVolume);
@@ -104,6 +105,7 @@ public:
 
     void Start(const QString _filePath);
     void run() override;
+    void onChangePlayProgress(int val);
 
     VideoPlayer *mVideoPlayer = nullptr;
     AudioPlayer *mAudioPlayer = nullptr;
@@ -117,6 +119,9 @@ public:
     QWidget &mMainWindow;
     double mAudioVolume;
     QPixmap mPixmap;
+    int64_t mTotalDuration; // total time of video ms
+    double mPlayProgressRate;
+    bool mIsChangingProgress;
 
     // =========================================================video run param==================================================================
 //    int mVideoStreamIndex;

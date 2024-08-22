@@ -30,19 +30,19 @@ QMutex gImgMut;
 QImage gImg;
 //QPixmap gPixmap;
 
-std::map<int, int> gSampleFmt2BitNum = {{AV_SAMPLE_FMT_NONE, -1},
-                                        {AV_SAMPLE_FMT_U8, 8},
-                                        {AV_SAMPLE_FMT_S16, 16},
-                                        {AV_SAMPLE_FMT_S32, 32},
-                                        {AV_SAMPLE_FMT_FLT, 32},
-                                        {AV_SAMPLE_FMT_DBL, 64},
-                                        {AV_SAMPLE_FMT_U8P, 8},
-                                        {AV_SAMPLE_FMT_S16P, 16},
-                                        {AV_SAMPLE_FMT_S32P, 32},
-                                        {AV_SAMPLE_FMT_FLTP, 32},
-                                        {AV_SAMPLE_FMT_DBLP, 64},
-                                        {AV_SAMPLE_FMT_S64, 64},
-                                        {AV_SAMPLE_FMT_S64P, 64}};
+//std::map<int, int> gSampleFmt2BitNum = {{AV_SAMPLE_FMT_NONE, -1},
+//                                        {AV_SAMPLE_FMT_U8, 8},
+//                                        {AV_SAMPLE_FMT_S16, 16},
+//                                        {AV_SAMPLE_FMT_S32, 32},
+//                                        {AV_SAMPLE_FMT_FLT, 32},
+//                                        {AV_SAMPLE_FMT_DBL, 64},
+//                                        {AV_SAMPLE_FMT_U8P, 8},
+//                                        {AV_SAMPLE_FMT_S16P, 16},
+//                                        {AV_SAMPLE_FMT_S32P, 32},
+//                                        {AV_SAMPLE_FMT_FLTP, 32},
+//                                        {AV_SAMPLE_FMT_DBLP, 64},
+//                                        {AV_SAMPLE_FMT_S64, 64},
+//                                        {AV_SAMPLE_FMT_S64P, 64}};
 
 /*=====================================Player========================================*/
 
@@ -56,12 +56,11 @@ Player::Player(QWidget &_mMainWindow)
     mAudioTimeBase = 0.0;
     mTimeDiff = 0.0;
     mAudioVolume = 0.5;
+    mPlayProgressRate = 0;
+    mIsChangingProgress = false;
 
     mVideoPlayer = new VideoPlayer(mIsPause, mAudioTimeBase, mVideoTimeBase, mTimeDiff, mNeedStop, mFilePath, _mMainWindow, *this);
     mAudioPlayer = new AudioPlayer(mIsPause, mAudioTimeBase, mNeedStop, mFilePath, _mMainWindow, *this, mAudioVolume);
-
-
-
 }
 
 Player::~Player()
@@ -77,6 +76,178 @@ Player::~Player()
         delete mAudioPlayer;
         mAudioPlayer = nullptr;
     }
+}
+
+void Player::onChangePlayProgress(int val)
+{
+    static int finalVal;
+    // wait slider release
+    if (mIsChangingProgress)
+    {
+        // do change progress
+        if (val == -10)
+        {
+            mIsPause = true;
+        }
+        else
+        {
+            finalVal = val;
+            return;
+        }
+    }
+    else
+    {
+        // normal play move
+        return;
+    }
+
+    if (!mVideoPlayer->isRunning() && !mAudioPlayer->isRunning())
+    {
+        mIsPause = false;
+        mIsChangingProgress = false;
+        return;
+    }
+
+    int64_t targetTime = (finalVal / 100.0) * mTotalDuration;
+    qDebug() << "[INFO] targetTIme is [" << targetTime << "]ms"
+             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+    // check forward or backward
+    int ret = 0;
+    int flag = 0;
+
+    double nowClock;
+
+    if (mAudioPlayer->mAudioFormatCtx)
+    {
+        nowClock =
+                mAudioPlayer->mAudioFrame->pts * av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base) * 1000;
+        if (nowClock > targetTime)
+        {
+            flag = AVSEEK_FLAG_BACKWARD;
+        }
+        else
+        {
+//            flag = AVSEEK_FLAG_FRAME;
+            flag = AVSEEK_FLAG_BACKWARD;
+        }
+    }
+    else
+    {
+        nowClock =
+                mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000;
+        if (nowClock > targetTime)
+        {
+            flag = AVSEEK_FLAG_BACKWARD;
+        }
+        else
+        {
+//            flag = AVSEEK_FLAG_FRAME;
+            flag = AVSEEK_FLAG_BACKWARD;
+        }
+    }
+    qDebug() << "[INFO] nowClock = [" << nowClock << "]ms."
+             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+#ifdef DVE_DEBUG
+    int64_t test1 = getMiliSecondTimeStamp();
+#endif
+    if (mVideoPlayer->mVideoFormatCtx)
+    {
+        ret = avformat_seek_file(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoStreamIndex,
+                (targetTime - 600) / 1000 / av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base),
+                (targetTime -500) / 1000 / av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base),
+                (targetTime -300) / 1000 / av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base),
+                flag);
+        if (ret < 0)
+        {
+            qDebug() << "[INFO] Video avformat_seek_file FAIL, err=[" << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+        }
+    }
+#ifdef DVE_DEBUG
+    int64_t test2 = getMiliSecondTimeStamp();
+#endif
+    if (mAudioPlayer->mAudioFormatCtx)
+    {
+        ret = avformat_seek_file(mAudioPlayer->mAudioFormatCtx, mAudioPlayer->mAudioStreamIndex,
+                (targetTime - 100) / 1000 / av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base),
+                (targetTime) / 1000 / av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base),
+                (targetTime + 100) / 1000 / av_q2d(mAudioPlayer->mAudioFormatCtx->streams[mAudioPlayer->mAudioStreamIndex]->time_base),
+                flag);
+        if (ret < 0)
+        {
+            qDebug() << "[INFO] Video avformat_seek_file FAIL, err=[" << QString(av_err2str(ret)).toStdString().c_str()
+                     << "]." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+        }
+    }
+#ifdef DVE_DEBUG
+    int64_t test3 = getMiliSecondTimeStamp();
+    qDebug() << "[INFO] seek video use [" << test2-test1 << "]ms, seek audio use [" << test3-test2 << "]ms"
+             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+#endif
+    if (ret < 0)
+    {
+
+    }
+
+    // change base time
+//    while (abs(mVideoTimeBase - targetTime) > 100)
+//    {
+//        // decode and drop
+//        av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
+//    }
+//    do
+//    {
+//        ret = av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
+//        if (ret < 0)
+//        {
+//            qDebug() << "%%%% av_read_frame fail, err=["
+//                     << QString(av_err2str(ret)).toStdString().c_str() << "]";
+//            break;
+//        }
+//        if (mVideoPlayer->mVideoPacket->stream_index != mVideoPlayer->mVideoStreamIndex)
+//        {
+//            qDebug() << "@@@ continue";
+//            continue;
+//        }
+//        qDebug() << "$$$ find video packet";
+//        ret = avcodec_send_packet(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoPacket);
+//        qDebug() << "there";
+//        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
+//        {
+//            continue;
+//        }
+//        if (ret < 0)
+//        {
+//            qDebug() << "[ERROR] avcodec_send_packet FAIL. ret=[" << ret << "], err=["
+//                     << QString(av_err2str(ret)).toStdString().c_str()
+//                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+//            break;;
+//        }
+
+//        ret = avcodec_receive_frame(mVideoPlayer->mVideoCodecCtx, mVideoPlayer->mVideoFrame);
+//        if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
+//        {
+//            continue;
+//        }
+//        if (ret < 0)
+//        {
+//            qDebug() << "[ERROR] avcodec_receive_frame FAIL. ret=[" << ret << "], err=["
+//                     << QString(av_err2str(ret)).toStdString().c_str()
+//                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+//            break;;
+//        }
+//    } while ((mVideoPlayer->mVideoFrame->flags != 1) &&
+//             (mVideoPlayer->mVideoFrame->pict_type != AV_PICTURE_TYPE_I));
+//    qDebug() << "here";
+    av_read_frame(mVideoPlayer->mVideoFormatCtx, mVideoPlayer->mVideoPacket);
+    av_read_frame(mAudioPlayer->mAudioFormatCtx, mAudioPlayer->mAudioPacket);
+    mVideoTimeBase = mAudioTimeBase =
+            mVideoPlayer->mVideoPacket->pts * av_q2d(mVideoPlayer->mVideoFormatCtx->streams[mVideoPlayer->mVideoStreamIndex]->time_base) * 1000;
+    qDebug() << "[INFO] after change, mAudioTimeBase=[" << mAudioTimeBase << "], mVideoTimeBase=["
+             << mVideoTimeBase << "]" << getMiliSecondTimeStamp();
+
+    mIsPause = false;
+    mIsChangingProgress = false;
 }
 
 void Player::Start(const QString _filePath)
@@ -128,6 +299,7 @@ void Player::Start(const QString _filePath)
     mFilePath = _filePath;
     mNeedStop = false;
     mIsPause = false;
+    mTotalDuration = 0;
 
     // start this thread
     this->start();
@@ -202,7 +374,7 @@ int VideoPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avformat_open_input FAIL. file=["
-                 << mFilePath << "], err=[" << av_err2str(ret)
+                 << mFilePath << "], err=[" << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -211,7 +383,7 @@ int VideoPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avformat_find_stream_info FAIL. err=["
-                 << QString(av_err2str(ret))
+                 << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -241,7 +413,7 @@ int VideoPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avcodec_open2 FAIL. err=["
-                 << QString(av_err2str(ret))
+                 << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -318,18 +490,12 @@ void VideoPlayer::run()
     // read video packet in a loop
     while (!mNeedStop)
     {
-        if (mIsPause)
-        {
-            Sleep(PAUSE_SLEEP_TIME);
-            startClock += PAUSE_SLEEP_TIME;
-            continue;
-        }
         // read frame
         ret = av_read_frame(mVideoFormatCtx, mVideoPacket);
         if (ret < 0)
         {
             qDebug() << "[ERROR] av_read_frame FAIL. ret=[" << ret << "], err=["
-                     << QString(av_err2str(ret))
+                     << QString(av_err2str(ret)).toStdString().c_str()
                      << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
             goto out;
         }
@@ -361,18 +527,21 @@ void VideoPlayer::run()
         if (ret < 0)
         {
             qDebug() << "[ERROR] avcodec_receive_frame FAIL. ret=[" << ret << "], err=["
-                     << QString(av_err2str(ret))
+                     << QString(av_err2str(ret)).toStdString().c_str()
                      << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
             goto out;
         }
 
+        if (mIsPause)
+        {
+            Sleep(PAUSE_SLEEP_TIME);
+            startClock += PAUSE_SLEEP_TIME;
+            continue;
+        }
+
         // YUV to RGB32
         sws_scale(mVideoSwsCtx, mVideoFrame->data, mVideoFrame->linesize, 0, mVideoCodecCtx->height, mVideoFrameRGB->data, mVideoFrameRGB->linesize);
-//            gImgMut.lock();
-        gImg = QImage((uchar*)mVideoFrameRGB->data[0], mVideoCodecCtx->width, mVideoCodecCtx->height, QImage::Format_RGB32);
-        p.mPixmap = QPixmap::fromImage(gImg);
-        //            gImgMut.unlock();
-        mMainWindow.update();
+
 
         // sync with audio
         if (static_cast<Player&>(mParent).mAudioPlayer->isRunning() && mAudioTimeBase >= 0)
@@ -386,7 +555,7 @@ void VideoPlayer::run()
             {
 #ifdef DVE_DEBUG
                 qDebug() << "[INFO] *********image too fast, videoTimeBase=[" << mVideoTimeBase << "], audioTimeBase=["
-                         << mAudioTimeBase << "]"
+                         << mAudioTimeBase << "], time diff=[" << mTimeDiff << "]"
                          << getMiliSecondTimeStamp();
 #endif
                 Sleep(mTimeDiff);
@@ -411,6 +580,11 @@ void VideoPlayer::run()
                 Sleep(timeDiff);
             }
         }
+        gImgMut.lock();
+        gImg = QImage((uchar*)mVideoFrameRGB->data[0], mVideoCodecCtx->width, mVideoCodecCtx->height, QImage::Format_RGB32);
+        p.mPixmap = QPixmap::fromImage(gImg);
+        gImgMut.unlock();
+        mMainWindow.update();
         av_packet_unref(mVideoPacket);
     }
 out:
@@ -502,7 +676,7 @@ int AudioPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avformat_open_input FAIL. file=["
-                    << mFilePath << "], err=[" << av_err2str(ret)
+                    << mFilePath << "], err=[" << QString(av_err2str(ret)).toStdString().c_str()
                     << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -510,7 +684,7 @@ int AudioPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avformat_find_stream_info FAIL. err=["
-                 << QString(av_err2str(ret))
+                 << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -535,7 +709,7 @@ int AudioPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] avcodec_open2 FAIL. err=["
-                 << QString(av_err2str(ret))
+                 << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -562,7 +736,7 @@ int AudioPlayer::InitRunParam()
     if (ret < 0)
     {
         qDebug() << "[ERROR] swr_alloc_set_opts2 FAIL. err=["
-                 << QString(av_err2str(ret))
+                 << QString(av_err2str(ret)).toStdString().c_str()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
@@ -575,10 +749,16 @@ void AudioPlayer::run()
 {
     qDebug() << LOG_ENTER_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
 
+    Player& p = static_cast<Player&>(mParent);
     int ret = 0;
     int len = -1;
     int outSize = -1;
     int64_t sleepTime = 0;  // ms
+
+    // get total play time
+    p.mTotalDuration = mAudioFormatCtx->duration / 1000;
+    qDebug() << "[INFO] totalPlayTime is [" << p.mTotalDuration << "]ms."
+             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
 
     while (!mNeedStop)
     {
@@ -591,7 +771,7 @@ void AudioPlayer::run()
         if (ret < 0)
         {
             qDebug() << "[ERROR] av_read_frame FAIL. ret=[" << ret << "], err=["
-                     << QString(av_err2str(ret))
+                     << QString(av_err2str(ret)).toStdString().c_str()
                      << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
             goto out;
         }
@@ -650,6 +830,8 @@ void AudioPlayer::run()
             gTimeDiffMut.lock();
             mAudioTimeBase = mAudioFrame->pts * av_q2d(mAudioFormatCtx->streams[mAudioStreamIndex]->time_base) * 1000;
             gTimeDiffMut.unlock();
+            // update play progress
+            p.mPlayProgressRate = mAudioTimeBase / p.mTotalDuration;
         }
         av_packet_unref(mAudioPacket);
     }

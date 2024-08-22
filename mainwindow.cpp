@@ -24,17 +24,32 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->pushButton, &QPushButton::released, this, &MainWindow::onReleasePauseButton);
 
     // set volume change
-    connect(ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
+    connect(ui->verticalSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
 
     mPlayer = new Player(*this);
     // set resize action
     connect(mPlayer->mVideoPlayer, &VideoPlayer::sigResizeWindows, this, &MainWindow::SetPlayerSize);
+
+     // set progress bar change
+    connect(ui->horizontalSlider, &QSlider::sliderPressed, this, &MainWindow::onProgressPress);
+    connect(ui->horizontalSlider, &QSlider::valueChanged, mPlayer, &Player::onChangePlayProgress);
+    connect(ui->horizontalSlider, &QSlider::sliderReleased, this, &MainWindow::onProgressRelease);
 
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::onProgressPress()
+{
+    mPlayer->mIsChangingProgress = true;
+}
+
+void MainWindow::onProgressRelease()
+{
+    emit ui->horizontalSlider->valueChanged(-10);
 }
 
 void MainWindow::onVolumeChanged(int val)
@@ -49,7 +64,7 @@ void MainWindow::onVolumeChanged(int val)
         return;
     }
     mPlayer->mAudioPlayer->mAudioOutput->setVolume(val / 100.0);
-    qDebug() << "[INFO] Set volume=[" << val / 100.0 << "]." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+//    qDebug() << "[INFO] Set volume=[" << val / 100.0 << "]." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
 }
 
 void MainWindow::onReleasePauseButton()
@@ -60,14 +75,6 @@ void MainWindow::onReleasePauseButton()
         return;
     }
     mPlayer->mIsPause = (mPlayer->mIsPause)? false : true;
-    if (!mPlayer->mIsPause)
-    {
-        ui->pushButton->setText("Pause");
-    }
-    else
-    {
-        ui->pushButton->setText("Start");
-    }
 }
 
 void MainWindow::onClickOpenFile()
@@ -108,19 +115,38 @@ void MainWindow::SetPlayerSize(int width, int height)
 void MainWindow::paintEvent(QPaintEvent *event)
 {
 //    qDebug() << LOG_ENTER_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
-//    gImgMut.lock();
     QPainter tmpPainter(this);
+    gImgMut.lock();
     tmpPainter.drawPixmap(QRect(ui->verticalLayoutWidget->x() + ui->verticalLayoutWidget->width(),
                                 ui->verticalLayoutWidget->y(), mPlayer->mPixmap.width(), mPlayer->mPixmap.height()),
                                 mPlayer->mPixmap);
-//    gImgMut.unlock();
+    gImgMut.unlock();
+
     // change bottom playing layout
     ui->horizontalLayoutWidget_2->setGeometry(ui->verticalLayoutWidget->width() + 10,
                                               this->height() - ui->horizontalLayoutWidget_2->height()-ui->pushButton->height(),
                                               ui->horizontalLayoutWidget_2->width(),
                                               ui->horizontalLayoutWidget_2->height());
+    // draw volume
     double tmpVolume = mPlayer->mAudioVolume * 100;
-    ui->horizontalSlider->setValue(tmpVolume);
+    ui->verticalSlider->setValue(tmpVolume);
+
+    // draw paly progress
+    if (!mPlayer->mIsChangingProgress)
+    {
+        ui->horizontalSlider->setValue(mPlayer->mPlayProgressRate * 100);
+    }
+
+    // draw pause button
+    if (!mPlayer->mIsPause)
+    {
+        ui->pushButton->setText("Pause");
+    }
+    else
+    {
+        ui->pushButton->setText("Start");
+    }
+
 //    qDebug() << LOG_LEAVE_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
 }
 
