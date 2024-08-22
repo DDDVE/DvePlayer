@@ -449,9 +449,9 @@ AudioPlayer::~AudioPlayer()
 
 void AudioPlayer::InitAudioFormat(QAudioFormat &_audioFormat)
 {
-    _audioFormat.setSampleRate(44100);
-    _audioFormat.setChannelCount(2);
-    _audioFormat.setSampleSize(32);
+    _audioFormat.setSampleRate(mAudioCodecCtx->sample_rate);
+    _audioFormat.setChannelCount(mAudioCodecCtx->ch_layout.nb_channels);
+    _audioFormat.setSampleSize(8 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16));
     _audioFormat.setCodec("audio/pcm");
     _audioFormat.setByteOrder(QAudioFormat::LittleEndian);
     _audioFormat.setSampleType(QAudioFormat::SignedInt);
@@ -485,29 +485,14 @@ void AudioPlayer::releaseRunParam()
     }
     if (mAudioOutput)
     {
+        mAudioOutput->stop();
         delete mAudioOutput; mAudioOutput = nullptr;
     }
 }
 
 int AudioPlayer::InitRunParam()
 {
-
     int ret = 0;
-    mAudioFormat = new QAudioFormat();
-    InitAudioFormat(*mAudioFormat);
-    QAudioDeviceInfo audioDeviceInfo = QAudioDeviceInfo::defaultOutputDevice();
-    if (!audioDeviceInfo.isFormatSupported(*mAudioFormat))
-    {
-        *mAudioFormat = audioDeviceInfo.nearestFormat(*mAudioFormat);
-        qDebug() << "[ERROR] isFormatSupported FAIL, change format to { sample rate=[" << mAudioFormat->sampleRate()
-                 << "], channel count=[" << mAudioFormat->channelCount() << "], sample size=[" << mAudioFormat->sampleSize()
-                 << "], codec=[" << mAudioFormat->codec() << "], byte order=[" << mAudioFormat->byteOrder()
-                 << "], sample type=[" << mAudioFormat->sampleType() << "] }" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
-    }
-
-    mAudioOutput = new QAudioOutput(*mAudioFormat);
-    mAudioOutput->setVolume(mAudioVolume);
-    mAudioIODevice = mAudioOutput->start();
 
     mAudioFormatCtx = avformat_alloc_context();
     mAudioPacket = av_packet_alloc();
@@ -554,15 +539,25 @@ int AudioPlayer::InitRunParam()
                  << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
         return ret;
     }
-    if (!gSampleFmt2BitNum.count(mAudioCodecCtx->sample_fmt) || gSampleFmt2BitNum[mAudioCodecCtx->sample_fmt] == -1)
+
+    // set audio format
+    mAudioFormat = new QAudioFormat();
+    InitAudioFormat(*mAudioFormat);
+    QAudioDeviceInfo audioDeviceInfo = QAudioDeviceInfo::defaultOutputDevice();
+    if (!audioDeviceInfo.isFormatSupported(*mAudioFormat))
     {
-        qDebug() << "[ERROR] sample_fmt UNKNOWN." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
-        return -1;
+        *mAudioFormat = audioDeviceInfo.nearestFormat(*mAudioFormat);
+        qDebug() << "[ERROR] isFormatSupported FAIL, change format to { sample rate=[" << mAudioFormat->sampleRate()
+                 << "], channel count=[" << mAudioFormat->channelCount() << "], sample size=[" << mAudioFormat->sampleSize()
+                 << "], codec=[" << mAudioFormat->codec() << "], byte order=[" << mAudioFormat->byteOrder()
+                 << "], sample type=[" << mAudioFormat->sampleType() << "] }" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
     }
-    qDebug() << "[INFO] Use sample_fmt [" << gSampleFmt2BitNum[mAudioCodecCtx->sample_fmt] << "]"
-             << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+
+    mAudioOutput = new QAudioOutput(*mAudioFormat);
+    mAudioOutput->setVolume(mAudioVolume);
+    mAudioIODevice = mAudioOutput->start();
     // set decode parameter
-    ret = swr_alloc_set_opts2(&mAudioSwrCtx, &mAudioCodecCtx->ch_layout, AV_SAMPLE_FMT_S32, mAudioCodecCtx->sample_rate,
+    ret = swr_alloc_set_opts2(&mAudioSwrCtx, &mAudioCodecCtx->ch_layout, AV_SAMPLE_FMT_S16, mAudioCodecCtx->sample_rate,
                                   &mAudioCodecCtx->ch_layout, mAudioCodecCtx->sample_fmt, mAudioCodecCtx->sample_rate, 0, nullptr);
     if (ret < 0)
     {
@@ -618,6 +613,7 @@ void AudioPlayer::run()
                      << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
             goto out;
         }
+
         while (avcodec_receive_frame(mAudioCodecCtx, mAudioFrame) >= 0)
         {
             if (!av_sample_fmt_is_planar(mAudioCodecCtx->sample_fmt))
@@ -632,13 +628,18 @@ void AudioPlayer::run()
                 continue;
             }
             // find size from map
-            outSize = av_samples_get_buffer_size(0,mAudioCodecCtx->ch_layout.nb_channels, len, AV_SAMPLE_FMT_S32, 1);
-            sleepTime = (mAudioCodecCtx->sample_rate * 32 * 2 / 8) / outSize / 2;
-
+            outSize = av_samples_get_buffer_size(0,mAudioCodecCtx->ch_layout.nb_channels, len, AV_SAMPLE_FMT_S16, 1);
+            if (outSize < 0)
+            {
+                qDebug() << "[ERROR] av_samples_get_buffer_size FAIL. err=["
+                         << QString(av_err2str(outSize)).toStdString().c_str() << "]"
+                         << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
+                continue;
+            }
+            sleepTime = (mAudioCodecCtx->sample_rate * 16 * mAudioCodecCtx->ch_layout.nb_channels / 8) / outSize;   // 16 - AV_SAMPLE_FMT_S16
             if (mAudioOutput->bytesFree() < outSize)
             {
                 Sleep(sleepTime);
-
             }
             else
             {
