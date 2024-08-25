@@ -46,6 +46,13 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QSlider" name="horizontalSlider_2">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
     </layout>
    </widget>
    <widget class="QWidget" name="verticalLayoutWidget">
@@ -65,7 +72,7 @@
       <x>140</x>
       <y>470</y>
       <width>631</width>
-      <height>56</height>
+      <height>72</height>
      </rect>
     </property>
     <layout class="QHBoxLayout" name="horizontalLayout_2">

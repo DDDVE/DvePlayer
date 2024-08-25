@@ -58,6 +58,8 @@ Player::Player(QWidget &_mMainWindow)
     mAudioVolume = 0.5;
     mPlayProgressRate = 0;
     mIsChangingProgress = false;
+    mIsChangingSpeed = false;
+    mPlaySpeed = 1.0;
 
     mVideoPlayer = new VideoPlayer(mIsPause, mAudioTimeBase, mVideoTimeBase, mTimeDiff, mNeedStop, mFilePath, _mMainWindow, *this);
     mAudioPlayer = new AudioPlayer(mIsPause, mAudioTimeBase, mNeedStop, mFilePath, _mMainWindow, *this, mAudioVolume);
@@ -76,6 +78,41 @@ Player::~Player()
         delete mAudioPlayer;
         mAudioPlayer = nullptr;
     }
+}
+
+void Player::onChangePlaySpeed(int val)
+{
+    static double finalSpeed;
+    if (!mIsChangingSpeed)
+    {
+        // not changing speed now
+        return;
+    }
+    if (val != -10)
+    {
+        finalSpeed = val / 50.0;
+        return;
+    }
+    // do change
+    while (mIsPause)
+    {
+        // wait other things down
+        Sleep(10);
+    }
+    mIsPause = true;
+    // release mAudioOutput and mAUdioIODevice
+    delete mAudioPlayer->mAudioFormat;
+
+    mAudioPlayer->mAudioFormat = new QAudioFormat();
+    mAudioPlayer->InitAudioFormat(*(mAudioPlayer->mAudioFormat));
+    mAudioPlayer->mAudioFormat->setSampleRate(mAudioPlayer->mAudioCodecCtx->sample_rate * finalSpeed);
+    mAudioPlayer->mAudioOutput = new QAudioOutput(*(mAudioPlayer->mAudioFormat));
+    mAudioPlayer->mAudioOutput->setVolume(mAudioVolume);
+    mAudioPlayer->mAudioIODevice = mAudioPlayer->mAudioOutput->start();
+
+    mPlaySpeed = finalSpeed;
+    mIsChangingSpeed = false;
+    mIsPause = false;
 }
 
 void Player::onChangePlayProgress(int val)
@@ -345,6 +382,7 @@ void Player::Start(const QString _filePath)
     mNeedStop = false;
     mIsPause = false;
     mTotalDuration = 0;
+    mPlaySpeed = 1.0;
 
     // start this thread
     this->start();
@@ -559,6 +597,7 @@ void VideoPlayer::run()
             continue;
         }
         // decode frame
+//        mVideoPacket->pts /= 2;
         // 1.send packet
         ret = avcodec_send_packet(mVideoCodecCtx, mVideoPacket);
         if (ret == -1 * EAGAIN || ret == -1 * 1094995529)
@@ -674,6 +713,7 @@ AudioPlayer::~AudioPlayer()
 
 void AudioPlayer::InitAudioFormat(QAudioFormat &_audioFormat)
 {
+//    mAudioCodecCtx->sample_rate *= 0.78;
     _audioFormat.setSampleRate(mAudioCodecCtx->sample_rate);
     qDebug() << "^^^^^ real sample rate =[" << mAudioCodecCtx->sample_rate << "]";
     _audioFormat.setChannelCount(mAudioCodecCtx->ch_layout.nb_channels);
@@ -786,6 +826,7 @@ int AudioPlayer::InitRunParam()
     mAudioOutput = new QAudioOutput(*mAudioFormat);
     mAudioOutput->setVolume(mAudioVolume);
     mAudioIODevice = mAudioOutput->start();
+
     // set decode parameter
     ret = swr_alloc_set_opts2(&mAudioSwrCtx, &mAudioCodecCtx->ch_layout, AV_SAMPLE_FMT_S16, mAudioCodecCtx->sample_rate,
                                   &mAudioCodecCtx->ch_layout, mAudioCodecCtx->sample_fmt, mAudioCodecCtx->sample_rate, 0, nullptr);
@@ -849,7 +890,6 @@ void AudioPlayer::run()
                      << "]" << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
             goto out;
         }
-
         while (avcodec_receive_frame(mAudioCodecCtx, mAudioFrame) >= 0)
         {
             if (!av_sample_fmt_is_planar(mAudioCodecCtx->sample_fmt))
@@ -857,6 +897,8 @@ void AudioPlayer::run()
                 qDebug() << "[ERROR] av_sample_fmt_is_planar FAIL." << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
                 continue;
             }
+            // set pts
+//            mAudioFrame->pts /= 2;
             len = swr_convert(mAudioSwrCtx, &mAudioBuf, MAX_AUDIO_FRAME_SIZE * 2, mAudioFrame->data, mAudioFrame->nb_samples);
             if (len <= 0)
             {
@@ -872,6 +914,7 @@ void AudioPlayer::run()
                          << LOG_FUNCTION_AND_LINE << getMiliSecondTimeStamp();
                 continue;
             }
+            // for some mp3 smaple rate is 8000
             int times = 1;
             if (mAudioCodecCtx->sample_rate > 44100)
             {

@@ -106,6 +106,7 @@ public:
     void Start(const QString _filePath);
     void run() override;
     void onChangePlayProgress(int val);
+    void onChangePlaySpeed(int val);
 
     VideoPlayer *mVideoPlayer = nullptr;
     AudioPlayer *mAudioPlayer = nullptr;
@@ -122,6 +123,9 @@ public:
     int64_t mTotalDuration; // total time of video ms
     double mPlayProgressRate;
     bool mIsChangingProgress;
+    // play speed
+    bool mIsChangingSpeed;
+    double mPlaySpeed;
 
     // =========================================================video run param==================================================================
 //    int mVideoStreamIndex;

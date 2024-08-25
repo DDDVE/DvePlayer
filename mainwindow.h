@@ -28,6 +28,8 @@ public:
     void onVolumeChanged(int val);
     void onProgressRelease();
     void onProgressPress();
+    void onPlaySpeedPress();
+    void onPlaySpeedRelease();
 
 
     Ui::MainWindow *ui;

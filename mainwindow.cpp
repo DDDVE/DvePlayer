@@ -35,11 +35,25 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->horizontalSlider, &QSlider::valueChanged, mPlayer, &Player::onChangePlayProgress);
     connect(ui->horizontalSlider, &QSlider::sliderReleased, this, &MainWindow::onProgressRelease);
 
+    // set play speed change
+    connect(ui->horizontalSlider_2, &QSlider::sliderPressed, this, &MainWindow::onPlaySpeedPress);
+    connect(ui->horizontalSlider_2, &QSlider::valueChanged, mPlayer, &Player::onChangePlaySpeed);
+    connect(ui->horizontalSlider_2, &QSlider::sliderReleased, this, &MainWindow::onPlaySpeedRelease);
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::onPlaySpeedPress()
+{
+    mPlayer->mIsChangingSpeed = true;
+}
+
+void MainWindow::onPlaySpeedRelease()
+{
+    emit ui->horizontalSlider_2->valueChanged(-10);
 }
 
 void MainWindow::onProgressPress()
@@ -135,6 +149,12 @@ void MainWindow::paintEvent(QPaintEvent *event)
     if (!mPlayer->mIsChangingProgress)
     {
         ui->horizontalSlider->setValue(mPlayer->mPlayProgressRate * 100);
+    }
+
+    // draw play speed
+    if (!mPlayer->mIsChangingSpeed)
+    {
+        ui->horizontalSlider_2->setValue(mPlayer->mPlaySpeed * 50);
     }
 
     // draw pause button
